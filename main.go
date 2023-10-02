@@ -29,11 +29,10 @@ const (
 
 var proxyConn *ProxyConnection
 var frameResultwriter *FrameResultWriter
+
 func main() {
 	useVirtualWall := flag.Bool("v", false, "Use virtual wall ip filter")
 	proxyPort := flag.String("p", ":0", "Use as a proxy with specified port")
-	useProxyInput := flag.Bool("i", false, "Use proxy as input for the frames")
-	useProxyOutput := flag.Bool("o", false, "Send the frames to the proxy")
 	resultDirectory := flag.String("m", "", "Result directory")
 	flag.Parse()
 	frameResultwriter = NewFrameResultWriter(*resultDirectory, 5)
@@ -48,11 +47,6 @@ func main() {
 		fmt.Println(*proxyPort)
 		proxyConn.SetupConnection(*proxyPort)
 		useProxy = true
-		// TODO maybe move this
-		if *useProxyInput {
-			proxyConn.StartListening()
-		}
-
 	}
 
 	settingEngine := webrtc.SettingEngine{}
@@ -186,7 +180,7 @@ func main() {
 			if readErr != nil {
 				panic(err)
 			}
-			if useProxy && *useProxyOutput {
+			if useProxy {
 				// TODO: Use bufBinary and make plugin buffer size as parameter
 				proxyConn.SendFramePacket(buf, 20)
 			}
@@ -211,11 +205,11 @@ func main() {
 			if frames[p.FrameNr] == p.FrameLen && p.FrameNr%5 == 0 {
 				println("FRAME COMPLETE ", p.FrameNr, p.FrameLen)
 			}
-			
+
 			epochMilliseconds := time.Now().UnixNano() / int64(time.Millisecond)
-			msCounter += int(epochMilliseconds-oldEpochMilliseconds)
+			msCounter += int(epochMilliseconds - oldEpochMilliseconds)
 			bw += int(p.SeqLen + 20)
-			if uint64(msCounter / 1000) > 0 {
+			if uint64(msCounter/1000) > 0 {
 				timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 				data := fmt.Sprintf("%d;%.2f\n", timestamp, float64(8*bw/1000000))
 				fileCont.WriteString(data)
@@ -225,7 +219,7 @@ func main() {
 				// averageLoss
 				// delayTargetBitrate
 			}
-			oldEpochMilliseconds=epochMilliseconds
+			oldEpochMilliseconds = epochMilliseconds
 
 		}
 	})
