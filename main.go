@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -29,17 +30,16 @@ const (
 
 var proxyConn *ProxyConnection
 var frameResultwriter *FrameResultWriter
+var virtualWallFilterIp string
 
 func main() {
-	useVirtualWall := flag.Bool("v", false, "Use virtual wall ip filter")
+	virtualWallIp := flag.String("v", "", "Use virtual wall ip filter")
 	proxyPort := flag.String("p", ":0", "Use as a proxy with specified port")
 	resultDirectory := flag.String("m", "", "Result directory")
 	flag.Parse()
 	frameResultwriter = NewFrameResultWriter(*resultDirectory, 5)
 	fileCont, _ := os.OpenFile(*resultDirectory+"_cont.csv", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	fileCont.WriteString("timestamp;bitrate\n")
-
-	print(*useVirtualWall)
 
 	useProxy := false
 	if *proxyPort != ":0" {
@@ -51,7 +51,10 @@ func main() {
 
 	settingEngine := webrtc.SettingEngine{}
 	settingEngine.SetSCTPMaxReceiveBufferSize(16 * 1024 * 1024)
-
+	if *virtualWallIp != "" {
+		virtualWallFilterIp = *virtualWallIp
+		settingEngine.SetIPFilter(VirtualWallFilter)
+	}
 	i := &interceptor.Registry{}
 	m := &webrtc.MediaEngine{}
 	if err := m.RegisterDefaultCodecs(); err != nil {
@@ -156,6 +159,9 @@ func main() {
 			fmt.Println("Peer connection has gone to failed exiting")
 			os.Exit(0)
 		}
+		if s == webrtc.PeerConnectionStateConnected {
+			proxyConn.SetWsHandler(wsHandler)
+		}
 	})
 
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
@@ -202,7 +208,7 @@ func main() {
 				frameResultwriter.SetProcessingCompleteTimestamp(p.FrameNr, time.Now().UnixNano()/int64(time.Millisecond), false)
 				frameResultwriter.SaveRecord(p.FrameNr, false)
 			}
-			if frames[p.FrameNr] == p.FrameLen && p.FrameNr%5 == 0 {
+			if frames[p.FrameNr] == p.FrameLen && p.FrameNr%50 == 0 {
 				println("FRAME COMPLETE ", p.FrameNr, p.FrameLen)
 			}
 
@@ -284,4 +290,11 @@ func main() {
 
 	// Block forever
 	select {}
+}
+
+func VirtualWallFilter(addr net.IP) bool {
+	if addr.String() == virtualWallFilterIp {
+		return true
+	}
+	return false
 }

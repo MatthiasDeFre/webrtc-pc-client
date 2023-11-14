@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -36,10 +35,12 @@ type ProxyConnection struct {
 	incomplete_frames map[uint32]RemoteFrame
 	complete_frames   []RemoteFrame
 	frameCounter      uint32
+
+	wsHandler *WebsocketHandler
 }
 
 func NewProxyConnection() *ProxyConnection {
-	return &ProxyConnection{nil, nil, sync.RWMutex{}, make(map[uint32]RemoteFrame), make([]RemoteFrame, 0), 0}
+	return &ProxyConnection{nil, nil, sync.RWMutex{}, make(map[uint32]RemoteFrame), make([]RemoteFrame, 0), 0, nil}
 }
 
 func (pc *ProxyConnection) sendPacket(b []byte, offset uint32, packet_type uint32) {
@@ -95,38 +96,12 @@ func (pc *ProxyConnection) StartListening() {
 		for {
 			buffer := make([]byte, 1500)
 			_, _, _ = pc.conn.ReadFromUDP(buffer)
-			bufBinary := bytes.NewBuffer(buffer[4:20])
-			// Read the fields from the buffer into a struct
-			var p RemoteInputPacketHeader
-			err := binary.Read(bufBinary, binary.LittleEndian, &p)
-			if err != nil {
-				fmt.Println("Error:", err)
-				return
+			wsPacket := WebsocketPacket{
+				0,
+				10,
+				string(buffer),
 			}
-			pc.m.Lock()
-			_, exists := pc.incomplete_frames[p.Framenr]
-			if !exists {
-				r := RemoteFrame{
-					0,
-					p.Framelen,
-					make([]byte, p.Framelen),
-				}
-				pc.incomplete_frames[p.Framenr] = r
-			}
-			value := pc.incomplete_frames[p.Framenr]
-
-			copy(value.frameData[p.Frameoffset:p.Frameoffset+p.Packetlen], buffer[20:20+p.Packetlen])
-			value.currentLen = value.currentLen + p.Packetlen
-			
-			pc.incomplete_frames[p.Framenr] = value
-			if value.currentLen == value.frameLen {
-				println("FRAME ", p.Framenr, " COMPLETE")
-				pc.complete_frames = append(pc.complete_frames, value)
-				delete(pc.incomplete_frames, p.Framenr)
-			}
-			//println(p.Frameoffset, p.Framenr, value.currentLen, p.Framelen)
-			pc.m.Unlock()
-
+			pc.wsHandler.SendMessage(wsPacket)
 		}
 	}()
 }
@@ -137,22 +112,6 @@ func (pc *ProxyConnection) SendControlPacket(b []byte) {
 	pc.sendPacket(b, 0, ControlPacketType)
 }
 
-func (pc *ProxyConnection) NextFrame() []byte {
-	isNextFrameReady := false
-	for !isNextFrameReady {
-		pc.m.Lock()
-		if len(pc.complete_frames) > 0 {
-			isNextFrameReady = true
-		}
-		pc.m.Unlock()
-	}
-	pc.m.Lock()
-	data := pc.complete_frames[0].frameData
-	if pc.frameCounter%100 == 0 {
-		println("SENDING FRAME ", pc.frameCounter)
-	}
-	pc.complete_frames = pc.complete_frames[1:]
-	pc.frameCounter = pc.frameCounter + 1
-	pc.m.Unlock()
-	return data
+func (pc *ProxyConnection) SetWsHandler(wsHandler *WebsocketHandler) {
+	pc.wsHandler = wsHandler
 }
