@@ -34,6 +34,7 @@ var virtualWallFilterIp string
 
 func main() {
 	virtualWallIp := flag.String("v", "", "Use virtual wall ip filter")
+	websocketSvIp := flag.String("w", "localhost:5678", "Use websocket server at this ip")
 	proxyPort := flag.String("p", ":0", "Use as a proxy with specified port")
 	resultDirectory := flag.String("m", "", "Result directory")
 	flag.Parse()
@@ -136,7 +137,7 @@ func main() {
 		}
 	}()
 
-	wsHandler := NewWSHandler("localhost:5678")
+	wsHandler := NewWSHandler(*websocketSvIp)
 	//wsHandler := NewWSHandler("host.docker.internal:5678")
 	peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
