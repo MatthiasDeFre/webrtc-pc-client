@@ -201,6 +201,7 @@ func main() {
 				panic(err)
 			}
 			frames[p.FrameNr] += p.SeqLen
+
 			if frames[p.FrameNr] == p.SeqLen {
 				frameResultwriter.CreateRecord(p.FrameNr, time.Now().UnixNano()/int64(time.Millisecond), false)
 				frameResultwriter.SetSizeInBytes(p.FrameNr, p.FrameLen, false)
