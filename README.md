@@ -11,10 +11,11 @@ Building the project requires the use of Golang. To ensure comptability Golang v
 # Usage
 The client should be started after the server is fully setup to ensure that the signaling server can be contacted. Following command line parameters can be used to change the behaviour of the application:
 
-| **Parameter** | **Name**    | **Description**                                                       | **Example**   |
-|---------------|-------------|-----------------------------------------------------------------------|---------------|
-| -v            | IP Filter   | Forces the client to communicate using the interface with this IP     | 192.168.10.1  |
-| -p            | Proxy Port  | If enabled the client will forward frames to a separate application   | :8001         |
-| -m            | Result Path | The path to which metrics are saved (folder + file without extension) | results/exp_1 |
+| **Parameter** | **Name**     | **Description**                                                       | **Example**    |
+|---------------|------------- |-----------------------------------------------------------------------|----------------|
+| -v            | IP Filter    | Forces the client to communicate using the interface with this IP     | 192.168.10.1   |
+| -w            | WS Server ip | IP Address of the websocket server used for the signalling proces     | localhost:5678 |
+| -p            | Proxy Port   | If enabled the client will forward frames to a separate application   | :8001          |
+| -m            | Result Path  | The path to which metrics are saved (folder + file without extension) | results/exp_1  |
 
 # Roadmap
