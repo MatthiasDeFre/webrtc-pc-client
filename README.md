@@ -4,8 +4,9 @@ This repository contains the receiving WebRTC client of the real-time point clou
 # Building
 Building the project requires the use of Golang. To ensure comptability Golang version 1.21+ should be used. However, older version might also work but have not yet been tested. The project itself has been tested on both Windows and Ubuntu 20.04.
 
-# Dependencies
-TODO
+# Dependencies (will be installed by Golang)
+* [Pion (WebRTC)](https://github.com/pion/webrtc)
+* [Gorilla (websockets)](https://github.com/gorilla/websocket)
 
 # Usage
 The client should be started after the server is fully setup to ensure that the signaling server can be contacted. Following command line parameters can be used to change the behaviour of the application:
