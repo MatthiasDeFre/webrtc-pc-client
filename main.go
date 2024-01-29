@@ -50,7 +50,7 @@ func main() {
 	}
 
 	settingEngine := webrtc.SettingEngine{}
-	settingEngine.SetSCTPMaxReceiveBufferSize(16 * 1024 * 1024)
+	//settingEngine.SetSCTPMaxReceiveBufferSize(16 * 1024 * 1024)
 	if *virtualWallIp != "" {
 		virtualWallFilterIp = *virtualWallIp
 		settingEngine.SetIPFilter(VirtualWallFilter)
@@ -104,7 +104,7 @@ func main() {
 		panic(err)
 	}
 
-	generator, err := twcc.NewSenderInterceptor(twcc.SendInterval(10 * time.Millisecond))
+	generator, err := twcc.NewSenderInterceptor(twcc.SendInterval(1 * time.Millisecond))
 	if err != nil {
 		panic(err)
 	}
@@ -136,8 +136,8 @@ func main() {
 		}
 	}()
 
-	wsHandler := NewWSHandler("127.0.0.1:5678")
-
+	wsHandler := NewWSHandler("localhost:5678")
+	//wsHandler := NewWSHandler("host.docker.internal:5678")
 	peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
 			return
@@ -160,7 +160,7 @@ func main() {
 			os.Exit(0)
 		}
 		if s == webrtc.PeerConnectionStateConnected {
-			proxyConn.SetWsHandler(wsHandler)
+			//proxyConn.SetWsHandler(wsHandler)
 		}
 	})
 
