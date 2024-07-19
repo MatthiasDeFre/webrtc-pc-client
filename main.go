@@ -34,20 +34,19 @@ var virtualWallFilterIp string
 
 func main() {
 	virtualWallIp := flag.String("v", "", "Use virtual wall ip filter")
-	websocketSvIp := flag.String("w", "localhost:5678", "Use websocket server at this ip")
-	proxyPort := flag.String("p", ":0", "Use as a proxy with specified port")
+	websocketSvIp := flag.String("srv", "localhost:5678", "Use websocket server at this ip")
+	proxyAddr := flag.String("p", ":0", "Use as a proxy with specified port")
+	clientAddr := flag.String("clt", ":0", "Use as a proxy with specified port")
+	useProxy := flag.Bool("o", false, "Use as a proxy with specified port")
 	resultDirectory := flag.String("m", "", "Result directory")
 	flag.Parse()
 	frameResultwriter = NewFrameResultWriter(*resultDirectory, 5)
 	fileCont, _ := os.OpenFile(*resultDirectory+"_cont.csv", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	fileCont.WriteString("timestamp;bitrate\n")
 
-	useProxy := false
-	if *proxyPort != ":0" {
+	if *useProxy {
 		proxyConn = NewProxyConnection()
-		fmt.Println(*proxyPort)
-		proxyConn.SetupConnection(*proxyPort)
-		useProxy = true
+		proxyConn.SetupConnection(*proxyAddr, *clientAddr)
 	}
 
 	settingEngine := webrtc.SettingEngine{}
@@ -85,26 +84,29 @@ func main() {
 
 	m.RegisterFeedback(webrtc.RTCPFeedback{Type: "nack"}, webrtc.RTPCodecTypeVideo)
 	m.RegisterFeedback(webrtc.RTCPFeedback{Type: "nack", Parameter: "pli"}, webrtc.RTPCodecTypeVideo)
-
-	if err := webrtc.ConfigureTWCCHeaderExtensionSender(m, i); err != nil {
+	m.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC}, webrtc.RTPCodecTypeVideo)
+	if err := m.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: sdp.TransportCCURI}, webrtc.RTPCodecTypeVideo); err != nil {
 		panic(err)
 	}
+	/*if err := webrtc.ConfigureTWCCHeaderExtensionSender(m, i); err != nil {
+		panic(err)
+	}*/
 
 	responder, _ := nack.NewResponderInterceptor()
 	i.Add(responder)
 
 	// Client side
 
-	m.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC}, webrtc.RTPCodecTypeVideo)
-	if err := m.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: sdp.TransportCCURI}, webrtc.RTPCodecTypeVideo); err != nil {
-		panic(err)
-	}
+	/*	m.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC}, webrtc.RTPCodecTypeVideo)
+		if err := m.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: sdp.TransportCCURI}, webrtc.RTPCodecTypeVideo); err != nil {
+			panic(err)
+		}
 
-	m.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC}, webrtc.RTPCodecTypeAudio)
-	if err := m.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: sdp.TransportCCURI}, webrtc.RTPCodecTypeAudio); err != nil {
-		panic(err)
-	}
-
+		m.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC}, webrtc.RTPCodecTypeAudio)
+		if err := m.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: sdp.TransportCCURI}, webrtc.RTPCodecTypeAudio); err != nil {
+			panic(err)
+		}
+	*/
 	generator, err := twcc.NewSenderInterceptor(twcc.SendInterval(1 * time.Millisecond))
 	if err != nil {
 		panic(err)
@@ -117,6 +119,7 @@ func main() {
 
 	var candidatesMux sync.Mutex
 	pendingCandidates := make([]*webrtc.ICECandidate, 0)
+	pendingCandidatesString := make([]string, 0)
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine), webrtc.WithInterceptorRegistry(i), webrtc.WithMediaEngine(m))
 	peerConnection, err := api.NewPeerConnection(webrtc.Configuration{
 		PeerIdentity: "test",
@@ -187,7 +190,7 @@ func main() {
 			if readErr != nil {
 				panic(err)
 			}
-			if useProxy {
+			if *useProxy {
 				// TODO: Use bufBinary and make plugin buffer size as parameter
 				proxyConn.SendFramePacket(buf, 20)
 			}
@@ -237,14 +240,33 @@ func main() {
 	// CLIENT CB
 	var handleMessageCallback = func(wsPacket WebsocketPacket) {
 		switch wsPacket.MessageType {
+		case 1: // hello
+			fmt.Println("WebRTCPeer: Received hello")
+			offer, err := peerConnection.CreateOffer(nil)
+			if err != nil {
+				panic(err)
+			}
+			if err = peerConnection.SetLocalDescription(offer); err != nil {
+				panic(err)
+			}
+			payload, err := json.Marshal(offer)
+			if err != nil {
+				panic(err)
+			}
+			wsHandler.SendMessage(WebsocketPacket{1, 2, string(payload)})
+			state = Hello
+			fmt.Printf("WebRTCPeer: Current state: %d\n", state)
 		case 2: // offer
-			println("Received offer")
+			fmt.Println("WebRTCPeer: Received offer")
 			offer := webrtc.SessionDescription{}
 			err := json.Unmarshal([]byte(wsPacket.Message), &offer)
 			if err != nil {
 				panic(err)
 			}
-			peerConnection.SetRemoteDescription(offer)
+			err = peerConnection.SetRemoteDescription(offer)
+			if err != nil {
+				panic(err)
+			}
 			answer, err := peerConnection.CreateAnswer(nil)
 			if err != nil {
 				panic(err)
@@ -258,37 +280,48 @@ func main() {
 			}
 			wsHandler.SendMessage(WebsocketPacket{1, 3, string(payload)})
 			state = Offer
-			println("Current state:", state)
-		case 4: // candidate
-			println("Received candidate")
-			candidate := wsPacket.Message
-			if candidateErr := peerConnection.AddICECandidate(webrtc.ICECandidateInit{Candidate: candidate}); candidateErr != nil {
-				panic(candidateErr)
+			fmt.Printf("WebRTCPeer: Current state: %d\n", state)
+		case 3: // answer
+			fmt.Println("WebRTCPeer: Received answer")
+			answer := webrtc.SessionDescription{}
+			err := json.Unmarshal([]byte(wsPacket.Message), &answer)
+			if err != nil {
+				panic(err)
 			}
+			if err := peerConnection.SetRemoteDescription(answer); err != nil {
+				panic(err)
+			}
+			candidatesMux.Lock()
+			for _, c := range pendingCandidates {
+				payload := []byte(c.ToJSON().Candidate)
+				wsHandler.SendMessage(WebsocketPacket{1, 4, string(payload)})
+			}
+			for _, c := range pendingCandidatesString {
+				if candidateErr := peerConnection.AddICECandidate(webrtc.ICECandidateInit{Candidate: c}); candidateErr != nil {
+					panic(candidateErr)
+				}
+			}
+			candidatesMux.Unlock()
+			state = Answer
+			fmt.Printf("WebRTCPeer: Current state: %d\n", state)
+		case 4: // candidate
+			fmt.Println("WebRTCPeer: Received candidate")
+			candidate := wsPacket.Message
+			desc := peerConnection.RemoteDescription()
+			if desc == nil {
+				pendingCandidatesString = append(pendingCandidatesString, candidate)
+			} else {
+				if candidateErr := peerConnection.AddICECandidate(webrtc.ICECandidateInit{Candidate: candidate}); candidateErr != nil {
+					panic(candidateErr)
+				}
+			}
+
 		default:
 			println(fmt.Sprintf("Received non-compliant message type %d", wsPacket.MessageType))
 		}
 	}
 
 	wsHandler.StartListening(handleMessageCallback)
-	// CLIENT
-	// CREATE PEER CONNECTION
-	// CREATE OFFER
-	// SEND OFFER VIA WS
-	/*offer, err := peerConnection.CreateOffer(nil)
-	if err != nil {
-		panic(err)
-	}
-	if err = peerConnection.SetLocalDescription(offer); err != nil {
-		panic(err)
-	}
-	payload, err := json.Marshal(offer)
-	if err != nil {
-		panic(err)
-	}*/
-	wsHandler.SendMessage(WebsocketPacket{1, 1, "Hello"})
-
-	//wsHandler.SendMessage(WebsocketPacket{1, 1, "Hello"})
 
 	// Block forever
 	select {}

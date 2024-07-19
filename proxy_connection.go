@@ -8,8 +8,10 @@ import (
 )
 
 const (
-	FramePacketType   uint32 = 0
-	ControlPacketType uint32 = 1
+	ReadyPacketType   uint32 = 0
+	FramePacketType   uint32 = 1
+	AudioPacketType   uint32 = 2
+	ControlPacketType uint32 = 3
 )
 
 type RemoteInputPacketHeader struct {
@@ -54,44 +56,41 @@ func (pc *ProxyConnection) sendPacket(b []byte, offset uint32, packet_type uint3
 	}
 }
 
-func (pc *ProxyConnection) SetupConnection(port string) {
-	address, err := net.ResolveUDPAddr("udp", port)
+func (pc *ProxyConnection) SetupConnection(proxyAddr string, cltAddr string) {
+	address, err := net.ResolveUDPAddr("udp", cltAddr)
 	if err != nil {
-		fmt.Println("Error resolving address:", err)
+		fmt.Printf("WebRTCPeer: ERROR: %s\n", err)
 		return
 	}
 
 	// Create a UDP connection
 	pc.conn, err = net.ListenUDP("udp", address)
 	if err != nil {
-		fmt.Println("Error listening:", err)
+		fmt.Printf("WebRTCPeer: ERROR: %s\n", err)
 		return
 	}
 
-	// Create a buffer to read incoming messages
+	pc.addr, err = net.ResolveUDPAddr("udp", proxyAddr)
+	if err != nil {
+		fmt.Printf("WebRTCPeer: ERROR: %s\n", err)
+		return
+	}
+
+	pc.SendPeerReadyPacket()
 	buffer := make([]byte, 1500)
 
 	// Wait for incoming messages
-	fmt.Println("Waiting for a message...")
+	fmt.Println("WebRTCPeer: Waiting for a message...", cltAddr, pc.addr.IP.String())
 	_, pc.addr, err = pc.conn.ReadFromUDP(buffer)
 	if err != nil {
-		fmt.Println("Error reading:", err)
+		fmt.Printf("WebRTCPeer: ERROR: %s\n", err)
 		return
 	}
-	fmt.Println("Connected to proxy")
+	fmt.Println("WebRTCPeer: Connected to Unity DLL")
+	pc.StartListening()
 }
 
 func (pc *ProxyConnection) StartListening() {
-	println("listen")
-	str := "Hello!"
-	byteArray := make([]byte, 1500)
-	copy(byteArray[:], str)
-	//byteArray[len(str)] = 0
-	_, err := pc.conn.WriteToUDP(byteArray, pc.addr)
-	if err != nil {
-		fmt.Println("Error sending response:", err)
-		return
-	}
 	go func() {
 		for {
 			buffer := make([]byte, 1500)
@@ -110,6 +109,10 @@ func (pc *ProxyConnection) SendFramePacket(b []byte, offset uint32) {
 }
 func (pc *ProxyConnection) SendControlPacket(b []byte) {
 	pc.sendPacket(b, 0, ControlPacketType)
+}
+
+func (pc *ProxyConnection) SendPeerReadyPacket() {
+	pc.sendPacket(make([]byte, 100), 0, ReadyPacketType)
 }
 
 func (pc *ProxyConnection) SetWsHandler(wsHandler *WebsocketHandler) {

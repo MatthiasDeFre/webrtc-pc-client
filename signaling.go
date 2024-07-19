@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -20,6 +21,7 @@ type WebsocketCallback func(WebsocketPacket)
 
 type WebsocketHandler struct {
 	conn *websocket.Conn
+	mut  sync.Mutex
 }
 
 func NewWSHandler(addr string) *WebsocketHandler {
@@ -29,7 +31,7 @@ func NewWSHandler(addr string) *WebsocketHandler {
 		println("Cannot connect to signalling server")
 		os.Exit(200)
 	}
-	return &WebsocketHandler{conn}
+	return &WebsocketHandler{conn, sync.Mutex{}}
 }
 
 func (w *WebsocketHandler) StartListening(cb WebsocketCallback) {
@@ -49,6 +51,8 @@ func (w *WebsocketHandler) StartListening(cb WebsocketCallback) {
 }
 
 func (w *WebsocketHandler) SendMessage(wsPacket WebsocketPacket) {
+	w.mut.Lock()
+	defer w.mut.Unlock()
 	s := fmt.Sprintf("%d@%d@%s", wsPacket.ClientID, wsPacket.MessageType, wsPacket.Message)
 	err := w.conn.WriteMessage(websocket.TextMessage, []byte(s))
 	if err != nil {
